@@ -1,0 +1,48 @@
+# Não copiar pro contexto do Docker.
+
+# --- Secrets/local config ---
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+service-account*.json
+gcp-credentials*.json
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+*.egg-info/
+dist/
+build/
+
+# --- Tests (não precisamos rodar em prod) ---
+tests/
+
+# --- Git / IDE / OS ---
+.git/
+.gitignore
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# --- Logs / temp ---
+*.log
+tmp/
+.cache/
+
+# --- Docs/scripts não necessários no container ---
+scripts/
+Makefile
