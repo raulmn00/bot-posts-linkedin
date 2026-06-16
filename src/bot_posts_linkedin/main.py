@@ -15,10 +15,13 @@ from bot_posts_linkedin.services.image_generator import (
 from bot_posts_linkedin.services.linkedin_publisher import HttpxLinkedInPublisher
 from bot_posts_linkedin.services.post_flow import PostFlowService
 from bot_posts_linkedin.services.post_generator import ClaudePostGenerator
+from bot_posts_linkedin.services.task_queue import GoogleCloudTasksClient
+from bot_posts_linkedin.services.update_dedup import FirestoreUpdateDedupStore
 from bot_posts_linkedin.store.chat_state_firestore import FirestoreChatStateStore
 from bot_posts_linkedin.store.firestore import FirestorePostStore
 from bot_posts_linkedin.telegram.client import HttpxTelegramClient
 from bot_posts_linkedin.telegram.webhook import router as telegram_router
+from bot_posts_linkedin.telegram.worker import router as worker_router
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +41,11 @@ def _configure_logging() -> None:
     )
 
 
-def create_app(*, post_flow: PostFlowService | None = None) -> FastAPI:
+def create_app(
+    *,
+    post_flow: PostFlowService | None = None,
+    update_dedup=None,  # type: ignore[no-untyped-def]
+) -> FastAPI:
     """Factory do app.
 
     Em prod/dev (sem argumento): wire-up padrão com httpx + stores em memória,
@@ -115,6 +122,22 @@ def create_app(*, post_flow: PostFlowService | None = None) -> FastAPI:
                 collection=settings.firestore_collection_chat_states,
             )
 
+            # G.3: Cloud Tasks pra geração/publicação + dedup de update_id no webhook.
+            worker_url = _build_worker_url(settings)
+            sa_email = f"bot-posts-prod@{settings.gcp_project_id}.iam.gserviceaccount.com"
+            task_queue = GoogleCloudTasksClient(
+                project_id=settings.gcp_project_id,
+                region=settings.gcp_region,
+                queue=settings.cloud_tasks_queue,
+                worker_url=worker_url,
+                oidc_service_account_email=sa_email,
+            )
+            app.state.update_dedup = FirestoreUpdateDedupStore(
+                project_id=settings.gcp_project_id,
+                collection=settings.firestore_collection_processed_updates,
+                ttl_minutes=settings.processed_updates_ttl_minutes,
+            )
+
             app.state.post_flow = PostFlowService(
                 post_store=post_store,
                 chat_state_store=chat_state_store,
@@ -125,6 +148,7 @@ def create_app(*, post_flow: PostFlowService | None = None) -> FastAPI:
                 replicate_image=replicate_image,
                 gcs_image=gcs_image,
                 linkedin_publisher=linkedin_publisher,
+                task_queue=task_queue,
                 settings=settings,
             )
             app.state.telegram_client = telegram_client
@@ -148,17 +172,35 @@ def create_app(*, post_flow: PostFlowService | None = None) -> FastAPI:
     app = FastAPI(title="bot-posts-linkedin", version="0.1.0", lifespan=lifespan)
     # Pré-popula o state: testes passam post_flow=fake e pulam o branch real.
     app.state.post_flow = post_flow
+    app.state.update_dedup = update_dedup
     app.state.telegram_client = None
     app.state.anthropic_client = None
     app.state.replicate_image = None
     app.state.linkedin_publisher = None
     app.include_router(telegram_router)
+    app.include_router(worker_router)
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
         return {"status": "ok", "env": get_settings().env}
 
     return app
+
+
+def _build_worker_url(settings) -> str:  # type: ignore[no-untyped-def]
+    """URL completa do worker — usada como `http_request.url` no Cloud Tasks.
+
+    Em prod, app_base_url precisa ser a URL pública do Cloud Run (setada após o
+    primeiro deploy via scripts/gcp_deploy.sh). Falha cedo se for localhost,
+    porque o Cloud Tasks NÃO consegue chamar localhost.
+    """
+    base = (settings.app_base_url or "").rstrip("/")
+    if not base or base.startswith("http://localhost"):
+        raise RuntimeError(
+            "APP_BASE_URL não está configurada com URL pública do Cloud Run. "
+            "Após o primeiro deploy, rode scripts/gcp_deploy.sh de novo pra setar."
+        )
+    return f"{base}{settings.cloud_tasks_worker_path}"
 
 
 async def _validate_external_credentials(
