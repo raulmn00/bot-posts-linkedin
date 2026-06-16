@@ -92,6 +92,7 @@ class Settings(BaseSettings):
 
     # --- Firestore ---
     firestore_collection_posts: str = "posts"
+    firestore_collection_chat_states: str = "chat_states"
 
 
 @lru_cache(maxsize=1)
