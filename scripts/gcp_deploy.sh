@@ -28,11 +28,18 @@ ANTHROPIC_MODEL_VAL="${ANTHROPIC_MODEL:-claude-sonnet-4-6}"
 SA_EMAIL="bot-posts-prod@${PROJECT_ID}.iam.gserviceaccount.com"
 SERVICE_NAME="bot-posts-linkedin"
 
+# G.3: tenta descobrir a URL antes do deploy. Se o service já existe, usa.
+# Se não (primeiro deploy), faz 2nd pass depois pra setar APP_BASE_URL.
+EXISTING_URL=$(gcloud run services describe "$SERVICE_NAME" \
+  --project="$PROJECT_ID" --region="$REGION" \
+  --format='value(status.url)' 2>/dev/null || echo "")
+
 # Env vars não-secretas (literais que o Settings precisa).
 ENV_VARS=(
   "ENV=prod"
   "LOG_LEVEL=INFO"
   "LINKEDIN_DRY_RUN=false"
+  "APP_BASE_URL=${EXISTING_URL:-PLACEHOLDER_WILL_UPDATE_AFTER}"
   "LINKEDIN_API_VERSION=${LINKEDIN_VERSION}"
   "ANTHROPIC_MODEL=${ANTHROPIC_MODEL_VAL}"
   "REPLICATE_IMAGE_MODEL=${REPLICATE_MODEL}"
@@ -94,6 +101,19 @@ URL=$(gcloud run services describe "$SERVICE_NAME" \
   --project="$PROJECT_ID" \
   --region="$REGION" \
   --format='value(status.url)')
+
+# G.3 2-pass: se era primeiro deploy, APP_BASE_URL foi com placeholder.
+# Atualizamos com a URL real agora que ela existe.
+if [[ -z "$EXISTING_URL" ]]; then
+  echo ""
+  echo "==> Primeira vez: atualizando APP_BASE_URL com URL real ($URL)"
+  gcloud run services update "$SERVICE_NAME" \
+    --project="$PROJECT_ID" \
+    --region="$REGION" \
+    --update-env-vars="APP_BASE_URL=$URL" \
+    --quiet >/dev/null
+  echo "    nova revisão criada com APP_BASE_URL setada"
+fi
 
 echo ""
 echo "✅ Deploy concluído"
