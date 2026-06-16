@@ -1,6 +1,7 @@
 .PHONY: install dev test lint fmt clean \
         gcp-create-sa gcp-secrets-sync gcp-deploy gcp-register-webhook gcp-logs \
-        gcp-toggle-dry-run gcp-toggle-real
+        gcp-toggle-dry-run gcp-toggle-real \
+        gcp-firestore-indexes gcp-firestore-ttl gcp-tasks-queue
 
 # Instala dependências (produção + dev) via uv.
 install:
@@ -45,6 +46,16 @@ gcp-secrets-sync:
 # Construção leva ~5min mas é assíncrona — script retorna imediato.
 gcp-firestore-indexes:
 	bash scripts/gcp_firestore_indexes.sh
+
+# Configura TTL nativo na collection processed_updates (G.3).
+# Rodar 1× por projeto antes do deploy com dedup ativo.
+gcp-firestore-ttl:
+	bash scripts/gcp_firestore_ttl_setup.sh
+
+# Cria/atualiza config da Cloud Tasks queue bot-post-jobs (G.3).
+# Rodar 1× ou quando quiser reaplicar config (retries, throttle).
+gcp-tasks-queue:
+	bash scripts/gcp_tasks_queue.sh
 
 # Build via Cloud Build + deploy no Cloud Run. Sai em DRY-RUN seguro por default.
 gcp-deploy:
