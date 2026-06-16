@@ -40,6 +40,12 @@ gcp-create-sa:
 gcp-secrets-sync:
 	bash scripts/gcp_secrets_sync.sh
 
+# Cria composite index do Firestore pra find_active_for_chat (G.2).
+# Rodar 1× por projeto antes do primeiro deploy com Firestore real.
+# Construção leva ~5min mas é assíncrona — script retorna imediato.
+gcp-firestore-indexes:
+	bash scripts/gcp_firestore_indexes.sh
+
 # Build via Cloud Build + deploy no Cloud Run. Sai em DRY-RUN seguro por default.
 gcp-deploy:
 	bash scripts/gcp_deploy.sh
