@@ -26,6 +26,7 @@ from tests.fakes import (
     FakeLinkedInPublisher,
     FakePostGenerator,
     FakeReplicateImageService,
+    FakeTaskQueueClient,
     FakeTelegramClient,
 )
 
@@ -43,6 +44,7 @@ class _Bundle(NamedTuple):
     replicate: FakeReplicateImageService
     gcs: FakeGcsImageStorage
     linkedin: FakeLinkedInPublisher
+    task_queue: FakeTaskQueueClient
 
 
 def _make_service() -> _Bundle:
@@ -55,6 +57,7 @@ def _make_service() -> _Bundle:
     replicate = FakeReplicateImageService()
     gcs = FakeGcsImageStorage()
     linkedin = FakeLinkedInPublisher(dry_run=False)
+    task_queue = FakeTaskQueueClient()
     service = PostFlowService(
         post_store=posts,
         chat_state_store=chats,
@@ -65,10 +68,13 @@ def _make_service() -> _Bundle:
         replicate_image=replicate,
         gcs_image=gcs,
         linkedin_publisher=linkedin,
+        task_queue=task_queue,
         settings=get_settings(),
     )
+    task_queue.set_dispatch_target(service)
     return _Bundle(
-        service, telegram, posts, chats, anthropic, github, post_gen, replicate, gcs, linkedin
+        service, telegram, posts, chats, anthropic, github, post_gen, replicate, gcs, linkedin,
+        task_queue,
     )
 
 
@@ -212,6 +218,7 @@ def _make_service_with_max(max_iterations: int) -> _Bundle:
     replicate = FakeReplicateImageService()
     gcs = FakeGcsImageStorage()
     linkedin = FakeLinkedInPublisher(dry_run=False)
+    task_queue = FakeTaskQueueClient()
     settings = get_settings().model_copy(
         update={"max_revision_iterations": max_iterations}
     )
@@ -225,10 +232,13 @@ def _make_service_with_max(max_iterations: int) -> _Bundle:
         replicate_image=replicate,
         gcs_image=gcs,
         linkedin_publisher=linkedin,
+        task_queue=task_queue,
         settings=settings,
     )
+    task_queue.set_dispatch_target(service)
     return _Bundle(
-        service, telegram, posts, chats, anthropic, github, post_gen, replicate, gcs, linkedin
+        service, telegram, posts, chats, anthropic, github, post_gen, replicate, gcs, linkedin,
+        task_queue,
     )
 
 

@@ -13,7 +13,9 @@ from tests.fakes import (
     FakeLinkedInPublisher,
     FakePostGenerator,
     FakeReplicateImageService,
+    FakeTaskQueueClient,
     FakeTelegramClient,
+    FakeUpdateDedupStore,
 )
 
 
@@ -30,6 +32,8 @@ def app_with_fakes():
     replicate = FakeReplicateImageService()
     gcs = FakeGcsImageStorage()
     linkedin = FakeLinkedInPublisher(dry_run=False)
+    task_queue = FakeTaskQueueClient()
+    dedup = FakeUpdateDedupStore()
     flow = PostFlowService(
         post_store=posts,
         chat_state_store=chats,
@@ -40,9 +44,11 @@ def app_with_fakes():
         replicate_image=replicate,
         gcs_image=gcs,
         linkedin_publisher=linkedin,
+        task_queue=task_queue,
         settings=settings,
     )
-    app = create_app(post_flow=flow)
+    task_queue.set_dispatch_target(flow)
+    app = create_app(post_flow=flow, update_dedup=dedup)
     return app, flow, telegram, posts, chats, settings
 
 
