@@ -87,7 +87,10 @@ async def test_generate_body_passa_insumos_no_prompt(system_prompt_file) -> None
     assert "achados do github" in call["prompt"]
     assert "primeiro feedback" in call["prompt"]
     assert "segundo" in call["prompt"]
-    assert "600 e 1200" in call["prompt"]  # alvo de comprimento
+    # Regra de tamanho dura (sem hard cap o Claude estourou 3000 chars em prod).
+    assert "1200 caracteres" in call["prompt"]
+    assert "700 a 1000" in call["prompt"]
+    assert "ANTES DE FECHAR" in call["prompt"]
     # System prompt veio do arquivo.
     assert "Raul" in call["system"]
 

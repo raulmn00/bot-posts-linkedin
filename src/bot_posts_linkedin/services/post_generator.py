@@ -111,8 +111,22 @@ def _build_body_prompt(post: Post) -> str:
         lines.append("")
 
     lines.append(
-        "ALVO DE TAMANHO: cada versão (PT e EN) deve ter entre 600 e 1200 "
-        "caracteres. Não conte caracteres explicitamente — apenas mire no alcance."
+        "TAMANHO — REGRA DURA:"
+    )
+    lines.append(
+        "- Cada versão (PT e EN) NÃO PODE passar de 1200 caracteres. Hard cap."
+    )
+    lines.append(
+        "- Target ideal: 700 a 1000 chars por versão."
+    )
+    lines.append(
+        "- Soma PT + separador (~20 chars) + EN tem que caber em 2800 chars total "
+        "(o LinkedIn rejeita acima de 3000 e nossa margem é 200)."
+    )
+    lines.append(
+        "- ANTES DE FECHAR: conte mentalmente os chars de cada versão. "
+        "Se PT ou EN passou de 1200, corte exemplos secundários e detalhes "
+        "que não sustentam o gancho/insight central. Densidade vence volume."
     )
     lines.append("")
     lines.append("FORMATO DE SAÍDA (siga exatamente):")
