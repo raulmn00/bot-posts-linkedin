@@ -298,6 +298,52 @@ class FakeLinkedInPublisher:
         self.closed = True
 
 
+class FakeTaskQueueClient:
+    """Em testes, execução é síncrona — mesma semântica do antigo asyncio.create_task.
+
+    Pra isso funcionar, os tests precisam chamar `set_dispatch_target(service)`
+    DEPOIS de construir o PostFlowService — assim o enqueue chama dispatch_task
+    direto na mesma corrotina (sem rede).
+    """
+
+    def __init__(self) -> None:
+        self.enqueue_calls: list[dict[str, Any]] = []
+        self.closed = False
+        self._dispatch_target = None  # type: ignore[var-annotated]
+        self._raise: Exception | None = None
+
+    def set_dispatch_target(self, service: Any) -> None:
+        self._dispatch_target = service
+
+    def set_error(self, exc: Exception) -> None:
+        self._raise = exc
+
+    async def enqueue(self, action: str, payload: dict[str, Any]) -> None:
+        self.enqueue_calls.append({"action": action, "payload": payload})
+        if self._raise is not None:
+            raise self._raise
+        if self._dispatch_target is not None:
+            await self._dispatch_target.dispatch_task(action, payload)
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+class FakeUpdateDedupStore:
+    """In-memory dedup store pra tests — sem TTL real."""
+
+    def __init__(self) -> None:
+        self._seen: set[int] = set()
+        self.mark_calls: list[int] = []
+
+    async def already_processed(self, update_id: int) -> bool:
+        return update_id in self._seen
+
+    async def mark_processed(self, update_id: int) -> None:
+        self._seen.add(update_id)
+        self.mark_calls.append(update_id)
+
+
 class FakeGithubSearchService:
     def __init__(self) -> None:
         self.search_calls: list[dict[str, Any]] = []
