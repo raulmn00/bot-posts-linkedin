@@ -41,6 +41,7 @@ from bot_posts_linkedin.services.post_generator import (
     BilingualParseError,
     PostGeneratorService,
 )
+from bot_posts_linkedin.services.task_queue import TaskQueueClient
 from bot_posts_linkedin.store.base import PostStore
 from bot_posts_linkedin.store.chat_state_base import ChatStateStore
 from bot_posts_linkedin.telegram.client import TelegramClient
@@ -100,6 +101,7 @@ class PostFlowService:
         replicate_image: ReplicateImageService,
         gcs_image: GcsImageStorage,
         linkedin_publisher: LinkedInPublisher,
+        task_queue: TaskQueueClient,
         settings: Settings,
     ) -> None:
         self._posts = post_store
@@ -111,7 +113,10 @@ class PostFlowService:
         self._replicate = replicate_image
         self._gcs = gcs_image
         self._linkedin = linkedin_publisher
+        self._task_queue = task_queue
         self._settings = settings
+        # Mantido vazio pra compat de wait_pending() em tests existentes —
+        # com Cloud Tasks o spawn é via enqueue (durável) e não asyncio.create_task.
         self._background_tasks: set[asyncio.Task] = set()
 
     # ====================================================================== infra
@@ -119,17 +124,31 @@ class PostFlowService:
     def _ttl(self) -> datetime:
         return _utcnow() + timedelta(hours=self._settings.revision_pending_ttl_hours)
 
-    def _spawn(self, coro) -> asyncio.Task:
-        task = asyncio.create_task(coro)
-        self._background_tasks.add(task)
-        task.add_done_callback(self._background_tasks.discard)
-        return task
-
     async def wait_pending(self) -> None:
-        if not self._background_tasks:
-            return
-        pending = list(self._background_tasks)
-        await asyncio.gather(*pending, return_exceptions=True)
+        """Compat no-op pós G.3 — tasks vão pro Cloud Tasks (durável).
+
+        Em tests, FakeTaskQueueClient executa síncrono dentro de enqueue;
+        em prod, Cloud Tasks invoca o worker em outro processo. Não há
+        background asyncio.create_task pra esperar.
+        """
+        return
+
+    async def dispatch_task(self, action: str, payload: dict) -> None:
+        """Roteador chamado pelo worker (Cloud Tasks → /internal/process-task).
+
+        Cada action mapeia pra um dos _run_*_safely. Adicionar action nova:
+        criar caso aqui + caller (handle_*) deve usar self._task_queue.enqueue.
+        """
+        if action == "run_generation":
+            await self._run_generation_safely(payload["chat_id"], payload["post_id"])
+        elif action == "run_revision":
+            await self._run_revision_safely(
+                payload["chat_id"], payload["post_id"], payload["reason"]
+            )
+        elif action == "run_publish":
+            await self._run_publish_safely(payload["chat_id"], payload["post_id"])
+        else:
+            raise ValueError(f"unknown task action: {action!r}")
 
     def _build_author_context(self, use_github: bool) -> str | None:
         """Texto injetado no prompt da pesquisa web quando flag [GITHUB] está presente.
@@ -166,7 +185,9 @@ class PostFlowService:
 
         post = Post(chat_id=chat_id, user_prompt=prompt, use_github=use_github)
         await self._posts.save(post)
-        self._spawn(self._run_generation_safely(chat_id, post.id))
+        await self._task_queue.enqueue(
+            "run_generation", {"chat_id": chat_id, "post_id": post.id}
+        )
 
     async def _ask_discard(
         self, chat_id: str, active: Post, new_prompt: str, new_use_github: bool
@@ -373,8 +394,10 @@ class PostFlowService:
                 text=body + PUBLISHING_FOOTER,
             )
 
-        # Publicação em background — webhook do callback responde 200 imediato.
-        self._spawn(self._run_publish_safely(chat_id, post.id))
+        # Publicação enfileirada no Cloud Tasks — webhook responde 200 imediato.
+        await self._task_queue.enqueue(
+            "run_publish", {"chat_id": chat_id, "post_id": post.id}
+        )
 
     async def _run_publish_safely(self, chat_id: str, post_id: str) -> None:
         try:
@@ -577,7 +600,9 @@ class PostFlowService:
                 use_github=pending.use_github,
             )
             await self._posts.save(novo)
-            self._spawn(self._run_generation_safely(chat_id, novo.id))
+            await self._task_queue.enqueue(
+                "run_generation", {"chat_id": chat_id, "post_id": novo.id}
+            )
         else:
             state.pending_new_command = None
             state.updated_at = _utcnow()
@@ -617,7 +642,10 @@ class PostFlowService:
         post.revision_count += 1
         await self._posts.save(post)
 
-        self._spawn(self._run_revision_safely(chat_id, post.id, text))
+        await self._task_queue.enqueue(
+            "run_revision",
+            {"chat_id": chat_id, "post_id": post.id, "reason": text},
+        )
 
     async def _run_revision_safely(
         self, chat_id: str, post_id: str, reason: str
