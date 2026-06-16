@@ -84,6 +84,8 @@ class Settings(BaseSettings):
     gcp_region: str = "southamerica-east1"
     gcs_bucket_name: str = Field(min_length=1)
     cloud_tasks_queue: str = "bot-post-jobs"
+    # Path do endpoint que processa as tasks enfileiradas (chamado pelo Cloud Tasks).
+    cloud_tasks_worker_path: str = "/internal/process-task"
     # Em Cloud Run essa var não é setada — usa a identity da metadata. Por isso opcional.
     google_application_credentials: str | None = None
     # TTL (minutos) das URLs assinadas geradas pro Telegram acessar a imagem do GCS.
@@ -93,6 +95,10 @@ class Settings(BaseSettings):
     # --- Firestore ---
     firestore_collection_posts: str = "posts"
     firestore_collection_chat_states: str = "chat_states"
+    # G.3: dedup por update_id do Telegram. TTL aplicado via campo expires_at +
+    # configuração de TTL no Firestore (script gcp_firestore_ttl_setup.sh).
+    firestore_collection_processed_updates: str = "processed_updates"
+    processed_updates_ttl_minutes: int = Field(default=10, ge=1, le=60)
 
 
 @lru_cache(maxsize=1)
