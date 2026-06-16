@@ -64,14 +64,18 @@ for role in "${ROLES[@]}"; do
     --quiet >/dev/null
 done
 
-echo "==> Concedendo roles/iam.serviceAccountTokenCreator sobre a própria SA"
-# Esse role é em CIMA da SA (não do projeto) — permite que ela "self-sign"
-# pra gerar signed URLs do GCS sem precisar de key file.
-gcloud iam service-accounts add-iam-policy-binding "$SA_EMAIL" \
-  --project="$PROJECT_ID" \
-  --member="serviceAccount:$SA_EMAIL" \
-  --role="roles/iam.serviceAccountTokenCreator" \
-  --quiet >/dev/null
+echo "==> Concedendo roles SOBRE A PRÓPRIA SA (Fases D, F, G.3)"
+# - tokenCreator: permite "self-sign" pra signed URLs do GCS sem key file (G.2)
+# - serviceAccountUser: permite "actAs" — Cloud Tasks usa pra gerar OIDC tokens
+#   em nome dessa SA quando invoca o /internal/process-task (G.3)
+for self_role in "roles/iam.serviceAccountTokenCreator" "roles/iam.serviceAccountUser"; do
+  echo "    + $self_role"
+  gcloud iam service-accounts add-iam-policy-binding "$SA_EMAIL" \
+    --project="$PROJECT_ID" \
+    --member="serviceAccount:$SA_EMAIL" \
+    --role="$self_role" \
+    --quiet >/dev/null
+done
 
 echo ""
 echo "✅ SA pronta: $SA_EMAIL"
