@@ -15,8 +15,8 @@ from bot_posts_linkedin.services.image_generator import (
 from bot_posts_linkedin.services.linkedin_publisher import HttpxLinkedInPublisher
 from bot_posts_linkedin.services.post_flow import PostFlowService
 from bot_posts_linkedin.services.post_generator import ClaudePostGenerator
-from bot_posts_linkedin.store.chat_state_memory import InMemoryChatStateStore
-from bot_posts_linkedin.store.memory import InMemoryPostStore
+from bot_posts_linkedin.store.chat_state_firestore import FirestoreChatStateStore
+from bot_posts_linkedin.store.firestore import FirestorePostStore
 from bot_posts_linkedin.telegram.client import HttpxTelegramClient
 from bot_posts_linkedin.telegram.webhook import router as telegram_router
 
@@ -104,9 +104,20 @@ def create_app(*, post_flow: PostFlowService | None = None) -> FastAPI:
             )
             logger.info("LinkedIn publication mode: %s", mode)
 
+            # G.2: Firestore real em prod. Posts e chat_states sobrevivem a
+            # restart do Cloud Run (era a limitação central do InMemory).
+            post_store = FirestorePostStore(
+                project_id=settings.gcp_project_id,
+                collection=settings.firestore_collection_posts,
+            )
+            chat_state_store = FirestoreChatStateStore(
+                project_id=settings.gcp_project_id,
+                collection=settings.firestore_collection_chat_states,
+            )
+
             app.state.post_flow = PostFlowService(
-                post_store=InMemoryPostStore(),
-                chat_state_store=InMemoryChatStateStore(),
+                post_store=post_store,
+                chat_state_store=chat_state_store,
                 telegram_client=telegram_client,
                 anthropic_client=anthropic_client,
                 github_search=github_search,
