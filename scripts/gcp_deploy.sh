@@ -2,13 +2,13 @@
 # Deploy do bot-posts-linkedin no Cloud Run.
 # Usa --source pra Cloud Build buildar a imagem direto (Dockerfile na raiz).
 #
-# Aplica os 7 secrets + env vars não-secretas no serviço. Imprime a URL pública
+# Aplica os 8 secrets + env vars não-secretas no serviço. Imprime a URL pública
 # no final — copia daí pro register_telegram_webhook.py.
 #
-# Modo SEGURO no primeiro deploy: LINKEDIN_DRY_RUN=true em prod, mesmo que
-# localmente esteja false. Depois você muda via:
-#   gcloud run services update bot-posts-linkedin \
-#     --region=$REGION --update-env-vars LINKEDIN_DRY_RUN=false
+# ⚠️ Sai em MODO REAL: LINKEDIN_DRY_RUN=false. Aprovar um post no Telegram
+# publica direto no perfil. Se quiser testar sem publicar antes, rode:
+#   make gcp-toggle-dry-run     # vira pra simulado
+#   make gcp-toggle-real        # volta pra publicação real
 
 set -euo pipefail
 
@@ -32,7 +32,7 @@ SERVICE_NAME="bot-posts-linkedin"
 ENV_VARS=(
   "ENV=prod"
   "LOG_LEVEL=INFO"
-  "LINKEDIN_DRY_RUN=true"
+  "LINKEDIN_DRY_RUN=false"
   "LINKEDIN_API_VERSION=${LINKEDIN_VERSION}"
   "ANTHROPIC_MODEL=${ANTHROPIC_MODEL_VAL}"
   "REPLICATE_IMAGE_MODEL=${REPLICATE_MODEL}"
@@ -69,7 +69,7 @@ SECRETS_JOINED=$(IFS=,; echo "${SET_SECRETS[*]}")
 echo "==> Deploy $SERVICE_NAME em $REGION (projeto $PROJECT_ID)"
 echo "    SA: $SA_EMAIL"
 echo "    bucket: $BUCKET"
-echo "    LINKEDIN_DRY_RUN=true (modo seguro no deploy)"
+echo "    ⚠️  LINKEDIN_DRY_RUN=false — APROVAR POST NO TELEGRAM = PUBLICAR DE VERDADE"
 echo ""
 
 gcloud run deploy "$SERVICE_NAME" \
@@ -100,9 +100,11 @@ echo "✅ Deploy concluído"
 echo "    URL: $URL"
 echo ""
 echo "Próximos passos:"
-echo "  1. Registrar webhook do Telegram apontando pra essa URL:"
+echo "  1. Registrar webhook do Telegram (se URL mudou):"
 echo "       uv run python scripts/register_telegram_webhook.py $URL"
-echo "  2. Mandar [GERAR-POST] de teste do celular (vai estar em DRY-RUN em prod)"
-echo "  3. Conferir logs: gcloud run services logs read $SERVICE_NAME --region=$REGION --limit=50"
-echo "  4. Quando confiante, virar pra REAL:"
-echo "       gcloud run services update $SERVICE_NAME --region=$REGION --update-env-vars LINKEDIN_DRY_RUN=false"
+echo "  2. Mandar [GERAR-POST] do celular — aprovar publica no LinkedIn real"
+echo "  3. Conferir logs: make gcp-logs"
+echo ""
+echo "Pra alternar a qualquer momento:"
+echo "  make gcp-toggle-dry-run    # vira pra simulado (não publica)"
+echo "  make gcp-toggle-real       # volta pra publicação real"
