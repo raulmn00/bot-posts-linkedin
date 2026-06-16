@@ -1,6 +1,6 @@
 """Router HTTP do webhook do Telegram.
 
-Faz só roteamento e validação de segurança. A lógica de negócio fica no
+Faz só roteamento, dedup e validação de segurança. A lógica de negócio fica no
 PostFlowService, que é injetado via FastAPI dependency e pode ser substituído
 nos testes com `app.dependency_overrides`.
 """
@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 
 from bot_posts_linkedin.config import Settings, get_settings
 from bot_posts_linkedin.services.post_flow import PostFlowService
+from bot_posts_linkedin.services.update_dedup import UpdateDedupStore
 from bot_posts_linkedin.telegram.parser import EmptySubjectError, parse_command
 
 router = APIRouter(prefix="/telegram")
@@ -22,6 +23,14 @@ def get_post_flow(request: Request) -> PostFlowService:
     if service is None:
         raise RuntimeError("PostFlowService não inicializado — chame create_app primeiro")
     return service
+
+
+def get_dedup_store(request: Request) -> UpdateDedupStore:
+    """G.3: dedup de update_id pra evitar processamento duplicado em retries."""
+    store = getattr(request.app.state, "update_dedup", None)
+    if store is None:
+        raise RuntimeError("UpdateDedupStore não inicializado — chame create_app primeiro")
+    return store
 
 
 def _verify_webhook_secret(
@@ -48,11 +57,19 @@ async def telegram_webhook(
     request: Request,
     settings: Annotated[Settings, Depends(get_settings)],
     flow: Annotated[PostFlowService, Depends(get_post_flow)],
+    dedup: Annotated[UpdateDedupStore, Depends(get_dedup_store)],
 ) -> Response:
     update: dict[str, Any] = await request.json()
-    # TODO Fase G: dedup por update_id. Telegram pode reenviar o mesmo update se
-    # nosso webhook demorar pra responder 200 — sem dedup, podemos rodar o flow 2×.
-    # Estratégia: guardar update_id num set/cache (Firestore TTL 10min) e ignorar se já visto.
+
+    # G.3 dedup — Telegram pode reentregar o mesmo update se nosso 200 demora.
+    # update_id é monotônico e único por bot. Sem dedup, retry causa execução 2×.
+    update_id = update.get("update_id")
+    if isinstance(update_id, int):
+        if await dedup.already_processed(update_id):
+            # Já vimos — 200 silent (Telegram para de tentar com isso).
+            return Response(status_code=status.HTTP_200_OK)
+        await dedup.mark_processed(update_id)
+
     chat_id = _extract_chat_id(update)
 
     # Chat de terceiro: 200 silent. Não revelar que o bot existe pra ID não autorizado.
