@@ -1,4 +1,4 @@
-.PHONY: install dev test lint fmt clean \
+.PHONY: install dev test lint fmt clean audit \
         gcp-create-sa gcp-secrets-sync gcp-deploy gcp-register-webhook gcp-logs \
         gcp-toggle-dry-run gcp-toggle-real \
         gcp-firestore-indexes gcp-firestore-ttl gcp-tasks-queue
@@ -27,6 +27,12 @@ fmt:
 clean:
 	rm -rf .venv .pytest_cache .ruff_cache
 	find . -type d -name __pycache__ -exec rm -rf {} +
+
+# Supply chain — escaneia uv.lock contra CVEs (OSV) e malware (OSV MAL).
+# uv audit é preview em 2026; UV_MALWARE_CHECK=1 aborta sync se algum
+# pacote bater num advisory de malware. Roda sem rede se já tem cache.
+audit:
+	UV_MALWARE_CHECK=1 uv audit
 
 # =============================================================================
 # GCP / Cloud Run (Fase G.1)
