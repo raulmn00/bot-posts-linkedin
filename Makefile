@@ -1,7 +1,8 @@
 .PHONY: install dev test lint fmt clean audit \
         gcp-create-sa gcp-secrets-sync gcp-deploy gcp-register-webhook gcp-logs \
         gcp-toggle-dry-run gcp-toggle-real \
-        gcp-firestore-indexes gcp-firestore-ttl gcp-tasks-queue
+        gcp-firestore-indexes gcp-firestore-ttl gcp-tasks-queue \
+        gcp-container-scanning
 
 # Instala dependências (produção + dev) via uv.
 install:
@@ -99,3 +100,8 @@ gcp-toggle-real:
 		--project="$$GCP_PROJECT_ID" --region="$${GCP_REGION:-southamerica-east1}" \
 		--update-env-vars=LINKEDIN_DRY_RUN=false; \
 	echo "⚠️  Cloud Run agora em modo REAL (publica de verdade)"
+
+# Sec-9: habilita Container Analysis API + scanning de imagens no Artifact Registry.
+# Rodar 1× por projeto. Próximos pushes serão escaneados automaticamente.
+gcp-container-scanning:
+	@bash scripts/gcp_container_scanning.sh
