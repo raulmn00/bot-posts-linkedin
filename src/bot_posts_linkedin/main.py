@@ -6,6 +6,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from bot_posts_linkedin.config import get_settings
+from bot_posts_linkedin.security import (
+    install_security_middlewares,
+    install_trace_log_filter,
+)
 from bot_posts_linkedin.services.anthropic_client import HttpxAnthropicClient
 from bot_posts_linkedin.services.github_search import GithubApiSearch
 from bot_posts_linkedin.services.image_generator import (
@@ -31,14 +35,19 @@ def _configure_logging() -> None:
 
     Sem isso, em Cloud Run TODOS os logs do nosso código Python (services,
     handlers) são silenciados — só uvicorn e exceptions não-capturadas viram log.
+
+    Formato inclui `trace_id` injetado pelo TraceContextMiddleware — quando
+    presente, Cloud Logging agrupa todas as log lines do mesmo request,
+    facilitando debug de fluxos longos (webhook → worker → publish).
     """
     settings = get_settings()
     logging.basicConfig(
         level=settings.log_level,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        format="%(asctime)s %(levelname)s [trace=%(trace_id)s] %(name)s: %(message)s",
         stream=sys.stdout,
         force=True,  # sobrescreve config anterior (uvicorn pode ter setado algo)
     )
+    install_trace_log_filter(logging.getLogger())
 
 
 def create_app(
@@ -177,6 +186,11 @@ def create_app(
     app.state.anthropic_client = None
     app.state.replicate_image = None
     app.state.linkedin_publisher = None
+
+    # Sec hardening (Tier 1): security headers, host allowlist, request size,
+    # server fingerprint hidden, trace correlation pra Cloud Logging.
+    install_security_middlewares(app, app_base_url=get_settings().app_base_url)
+
     app.include_router(telegram_router)
     app.include_router(worker_router)
 
