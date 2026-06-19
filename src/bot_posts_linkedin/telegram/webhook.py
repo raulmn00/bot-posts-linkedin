@@ -5,6 +5,7 @@ PostFlowService, que é injetado via FastAPI dependency e pode ser substituído
 nos testes com `app.dependency_overrides`.
 """
 
+import hmac
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
@@ -37,7 +38,15 @@ def _verify_webhook_secret(
     settings: Annotated[Settings, Depends(get_settings)],
     x_telegram_bot_api_secret_token: Annotated[str | None, Header()] = None,
 ) -> None:
-    if x_telegram_bot_api_secret_token != settings.telegram_webhook_secret:
+    """Valida o secret token em tempo constante (defesa contra timing attack).
+
+    `==` permite que um atacante meça diferenças de microssegundos pra inferir
+    o secret byte-por-byte. `hmac.compare_digest` executa em tempo proporcional
+    ao tamanho do menor input, sem early-exit no primeiro byte diferente.
+    """
+    expected = settings.telegram_webhook_secret
+    provided = x_telegram_bot_api_secret_token or ""
+    if not hmac.compare_digest(provided.encode("utf-8"), expected.encode("utf-8")):
         # 401 quando o secret está errado/ausente — só o Telegram com o secret correto passa.
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid secret")
 
