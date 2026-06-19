@@ -62,6 +62,13 @@ def _verify_oidc_token(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="missing token")
 
     token = authorization.removeprefix("Bearer ").strip()
+    # ASSERTION CATASTRÓFICA DE SEGURANÇA — se audience cair vazia/None aqui,
+    # verify_oauth2_token silenciosamente PULA a verificação de audience e qualquer
+    # token assinado pelo Google entra. Isso é a falha mais comum em OIDC validation
+    # (ver google-auth docs). O check de 503 acima já cobre; isso é defesa em
+    # profundidade contra regressões futuras.
+    if not expected_audience:
+        raise RuntimeError("BUG: expected_audience vazia chegou em verify_oauth2_token")
     try:
         payload = id_token.verify_oauth2_token(
             token, gauth_requests.Request(), audience=expected_audience
