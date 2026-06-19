@@ -1,5 +1,6 @@
 .PHONY: install dev test lint fmt clean audit \
-        gcp-create-sa gcp-secrets-sync gcp-deploy gcp-register-webhook gcp-logs \
+        gcp-create-sa gcp-secrets-sync gcp-deploy gcp-deploy-split \
+        gcp-register-webhook gcp-logs \
         gcp-toggle-dry-run gcp-toggle-real \
         gcp-firestore-indexes gcp-firestore-ttl gcp-tasks-queue \
         gcp-container-scanning
@@ -105,3 +106,10 @@ gcp-toggle-real:
 # Rodar 1× por projeto. Próximos pushes serão escaneados automaticamente.
 gcp-container-scanning:
 	@bash scripts/gcp_container_scanning.sh
+
+# Sec-11 (Tier 2): deploy SPLIT em 2 services Cloud Run.
+#   bot-posts-public  → ingress=all       → recebe webhook do Telegram
+#   bot-posts-worker  → ingress=internal  → recebe tasks do Cloud Tasks
+# Worker fica invisível pra internet pública; OIDC continua como defesa em profundidade.
+gcp-deploy-split:
+	@bash scripts/gcp_deploy_split.sh

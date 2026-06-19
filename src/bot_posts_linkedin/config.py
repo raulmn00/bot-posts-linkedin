@@ -23,6 +23,17 @@ class Settings(BaseSettings):
     env: Literal["dev", "prod"] = "dev"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     app_base_url: str = "http://localhost:8080"
+    # Sec-11 (Tier 2): qual parte do app esse process expõe.
+    #   - "all"    : webhook + worker (default; dev local + monolito atual)
+    #   - "public" : só /telegram/* — deploy com ingress=all (Cloud Run público)
+    #   - "worker" : só /internal/* — deploy com ingress=internal (não exposto)
+    # APP_BASE_URL ainda deve apontar pra URL pública do public service em
+    # ambos services — é usado pra audience OIDC e construção da URL do worker.
+    role: Literal["all", "public", "worker"] = "all"
+    # URL do worker service — necessária quando ROLE=public e o worker é um
+    # service separado (ingress=internal). Em ROLE=all, ignorada (worker_url
+    # vira app_base_url + cloud_tasks_worker_path).
+    worker_base_url: str = ""
 
     # --- Telegram ---
     telegram_bot_token: str = Field(min_length=10)

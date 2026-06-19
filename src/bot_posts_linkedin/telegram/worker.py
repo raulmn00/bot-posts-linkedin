@@ -92,7 +92,20 @@ def _verify_oidc_token(
 
 
 def _expected_audience(settings: Settings) -> str:
-    """URL completa do worker — usada como audience do OIDC."""
+    """URL completa do worker — usada como audience do OIDC.
+
+    Sec-11: quando ROLE=worker (service separado, ingress=internal), o audience
+    correto é a URL DO WORKER (worker_base_url), não a do public service. Ambos
+    services devem ter o MESMO worker_base_url configurado pra que o tokens
+    emitido pelo public bater com o expected do worker.
+    """
+    # Em modo split, o worker tem sua própria URL. No monolito (role=all),
+    # cai no app_base_url + path.
+    worker_url = (settings.worker_base_url or "").rstrip("/")
+    if worker_url:
+        if worker_url.startswith("http://localhost"):
+            return ""
+        return f"{worker_url}{settings.cloud_tasks_worker_path}"
     base = (settings.app_base_url or "").rstrip("/")
     if not base or base.startswith("http://localhost"):
         return ""

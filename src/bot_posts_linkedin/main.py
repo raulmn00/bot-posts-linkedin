@@ -189,10 +189,18 @@ def create_app(
 
     # Sec hardening (Tier 1): security headers, host allowlist, request size,
     # server fingerprint hidden, trace correlation pra Cloud Logging.
-    install_security_middlewares(app, app_base_url=get_settings().app_base_url)
+    settings_ = get_settings()
+    install_security_middlewares(app, app_base_url=settings_.app_base_url)
 
-    app.include_router(telegram_router)
-    app.include_router(worker_router)
+    # Sec-11 (Tier 2): monta apenas os routers do role atual. Em prod com split,
+    # public service só tem /telegram/* (ingress=all, exposto); worker service só
+    # tem /internal/* (ingress=internal, só GCP fala). Healthz fica nos dois pra
+    # Cloud Run uptime check.
+    role = settings_.role
+    if role in ("all", "public"):
+        app.include_router(telegram_router)
+    if role in ("all", "worker"):
+        app.include_router(worker_router)
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
@@ -207,11 +215,16 @@ def _build_worker_url(settings) -> str:  # type: ignore[no-untyped-def]
     Em prod, app_base_url precisa ser a URL pública do Cloud Run (setada após o
     primeiro deploy via scripts/gcp_deploy.sh). Falha cedo se for localhost,
     porque o Cloud Tasks NÃO consegue chamar localhost.
+
+    Sec-11: quando worker é service separado (ingress=internal), worker_base_url
+    aponta pra URL do worker service. Cloud Tasks consegue chamar ingress=internal
+    porque sai de dentro do GCP (não é tráfego de internet pública).
     """
-    base = (settings.app_base_url or "").rstrip("/")
+    # Preferência: worker_base_url > app_base_url (modo monolito).
+    base = (settings.worker_base_url or settings.app_base_url or "").rstrip("/")
     if not base or base.startswith("http://localhost"):
         raise RuntimeError(
-            "APP_BASE_URL não está configurada com URL pública do Cloud Run. "
+            "WORKER_BASE_URL/APP_BASE_URL não configurado com URL pública do Cloud Run. "
             "Após o primeiro deploy, rode scripts/gcp_deploy.sh de novo pra setar."
         )
     return f"{base}{settings.cloud_tasks_worker_path}"
